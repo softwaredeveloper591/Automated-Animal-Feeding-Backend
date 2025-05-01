@@ -2,6 +2,7 @@ const { storeTemperature, storeSeedLevel, storeAlert, storeLog } = require('./He
 const WebSocket = require('ws');
 const net = require('net');
 const http = require('http');
+const url = require('url');
 
 let connectedClient = null;
 let wsClient =  null;
@@ -478,7 +479,7 @@ const tcpServer = net.createServer((socket) => {
     res.end('Not Found\n');
   });
 
-const wss = new WebSocket.Server({ httpServer });
+const wss = new WebSocket.Server({ server: httpServer });
 
 wss.on('connection', (ws) => {
     console.log('Mobile Device connected!');
