@@ -110,12 +110,18 @@ const tcpServer = net.createServer((socket) => {
     
     // Handle feed interval change
     if (parsedUrl.pathname === '/set-interval') {
-      const interval = parseInt(parsedUrl.query.value);
-      if (!isNaN(interval) && interval >= 1000) {  // Minimum 1 second
+      const hourValue = parseInt(parsedUrl.query.hourValue);
+      const minuteValue = parseInt(parsedUrl.query.minuteValue);
+      const startHour = parsedUrl.query.startHour;
+      const endHour = parsedUrl.query.endHour;
+      const amount = parseInt(parsedUrl.query.value);
+      const interval = (hourValue * 3600 + minuteValue * 60) * 1000;
+      if (!isNaN(interval) && interval >= 1000 && !isNaN(amount) && amount>=0) {  // Minimum 1 second
         // Ensure clean interval value
         const intervalStr = interval.toString().trim();
-        console.log('Sending interval command:', 'INTERVAL=' + intervalStr);
-        if (sendToESP32('INTERVAL=' + intervalStr)) {
+        const amountStr = amount.toString().trim();
+        console.log('Sending interval command:', 'INTERVAL=' + intervalStr + ', START=' + startHour + ', END=' + endHour + ', AMOUNT=' + amountStr);
+        if (sendToESP32('INTERVAL=' + intervalStr + ',START=' + startHour + ',END=' + endHour + ',AMOUNT=' + amountStr)) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, message: `Feed interval set to ${interval}ms` }));
         } else {
