@@ -46,18 +46,7 @@ const tcpServer = net.createServer((socket) => {
                       latestTemperature = parseFloat(fullMatch[1]);
                       latestHumidity = parseFloat(fullMatch[2]);
                       console.log('Parsed values:', { temperature: latestTemperature, humidity: latestHumidity });
-
-                      // Send the latest temperature and humidity to the WebSocket client if connected
-                      if (wsClient && latestTemperature !== null && latestHumidity !== null) {
-                          const data = JSON.stringify({
-                              type: 'sensor_data',
-                              temperature: latestTemperature,
-                              humidity: latestHumidity,
-                              timestamp: new Date().toISOString()
-                          });
-                          wsClient.send(data);
-                          console.log('Sent data to WebSocket client:', data);
-                      }
+                      sendSensorDataToWebSocket(latestTemperature, latestHumidity);
                     }
                   }
                 });
@@ -88,6 +77,20 @@ const tcpServer = net.createServer((socket) => {
       return false;
     }
   }
+
+  // Function to send the latest temperature and humidity to the WebSocket client
+  function sendSensorDataToWebSocket(temperature, humidity) {
+    if (wsClient && temperature !== null && humidity !== null) {
+        const data = JSON.stringify({
+            type: 'sensor_data',
+            temperature: temperature,
+            humidity: humidity,
+            timestamp: new Date().toISOString()
+        });
+        wsClient.send(data);
+        console.log('Sent data to WebSocket client:', data);
+    }
+}
 
   const httpServer = http.createServer((req, res) => {
     const parsedUrl = url.parse(req.url, true);
@@ -128,9 +131,15 @@ const tcpServer = net.createServer((socket) => {
   
     // Handle feed command
     if (parsedUrl.pathname === '/feed') {
-      if (sendToESP32('FEED')) {
+      const amount = parseInt(parsedUrl.query.value);
+      if (isNaN(amount) || amount <= 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Invalid feed amount' }));
+        return;
+      }
+      if (sendToESP32('FEED=' + amount)) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: 'Feed command sent to ESP32' }));
+        res.end(JSON.stringify({ success: true, message: 'Feed command sent to ESP32 with amount: ' + amount }));
       } else {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'ESP32 not connected' }));
@@ -485,29 +494,10 @@ wss.on('connection', (ws) => {
     console.log('Mobile Device connected!');
     ws.send('Hello from server!');
     wsClient = ws; // Store the WebSocket client reference
+    sendSensorDataToWebSocket(latestTemperature, latestHumidity); // Send latest data on connection if available
 
-    ws.on('message', (message) => { 
-        try {
-            const data = JSON.parse(message); // Parse incoming JSON data
-            console.log('Received data:', data);
-
-            const validTypes = ['temperature', 'seed_level', 'alert'];
-
-            if (validTypes.includes(data.type)) {
-                if (data.type === 'temperature') {
-                    storeTemperature(data.device_id, data.temp);
-                } else if (data.type === 'seed_level') {
-                    storeSeedLevel(data.device_id, data.level);
-                } else if (data.type === 'alert') {
-                    storeAlert(data.device_id, data.alert_type, data.message);
-                }
-                storeLog(data.device_id, data.log_type, data.message);
-            } else {
-                console.error('Invalid data type received:', data.type);
-            }
-        } catch (error) {
-            console.error('Invalid JSON received:', error.message);
-        }
+    ws.on('message', (message) => {
+        console.log('Received message from client:', message);  
     });
 
     ws.on('close', () => {
