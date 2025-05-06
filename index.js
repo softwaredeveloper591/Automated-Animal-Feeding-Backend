@@ -3,11 +3,21 @@ const WebSocket = require('ws');
 const net = require('net');
 const http = require('http');
 const url = require('url');
+const express = require("express");
+const app     = express();
+
+app.use(express.json());
+app.use("/api", require("./routes/app.routes"));
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () =>
+  console.log(`API server is running on port ${PORT}`)
+);
 
 let connectedClient = null;
 let wsClient =  null;
-let latestTemperature = null;
-let latestHumidity = null;
+let latestTemperature = 50;
+let latestHumidity = 50;
 let initialConnectionReceived = false;
 let messageBuffer = ''; // Buffer to store incoming messages
 
@@ -155,6 +165,7 @@ const tcpServer = net.createServer((socket) => {
     
     // Handle status request
     if (parsedUrl.pathname === '/status') {
+      console.log('Status request received');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         esp32Connected: connectedClient !== null && connectedClient.writable && initialConnectionReceived,
