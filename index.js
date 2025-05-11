@@ -1,8 +1,11 @@
-const { storeTemperature, storeSeedLevel, storeAlert, storeLog } = require('./Helper Functions/dbFunctions');
+
 const WebSocket = require('ws');
 const net = require('net');
 const http = require('http');
 const url = require('url');
+const admin = require("firebase-admin");
+const serviceAccount = require("./config/push-notification-key.json");
+const {storeTemperature, storeSeedLevel, storeAlert, storeCommand} = require('./Helper Functions/dbFunctions.js');
 
 let connectedClient = null;
 let wsClient =  null;
@@ -11,6 +14,12 @@ let latestHumidity = null;
 let initialConnectionReceived = false;
 let messageBuffer = ''; // Buffer to store incoming messages
 
+storeCommand('FEED =0');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+// Initialize Firebase 
 const tcpServer = net.createServer((socket) => {
     console.log('ESP32 connected with socket:', socket.remoteAddress, socket.remotePort);   
 
@@ -71,6 +80,7 @@ const tcpServer = net.createServer((socket) => {
     if (connectedClient && connectedClient.writable) {
       console.log('Sending to ESP32:', command);
       connectedClient.write(command + '\n');
+      storeCommand(command);
       return true;
     } else {
       console.log('No ESP32 connected or connection not writable');
@@ -88,8 +98,35 @@ const tcpServer = net.createServer((socket) => {
             timestamp: new Date().toISOString()
         });
         wsClient.send(data);
+        storeTemperature(temperature, humidity);
         console.log('Sent data to WebSocket client:', data);
     }
+}
+
+  async function sendPushNotification(title, body, data) {
+    const fcm_token= "fXgQ8x3bTQCdkbPUmpQF4r:APA91bERB_QwB1sj8shicr5rJyZAGE4DaF4RT-qE2yV5bq9w58AGZxhbg5nt46S7YQ9OC8HOklGejXkDI4oRLGyV1iIUewS3XrCer_10Ead_RjqAtZ9rQK8";
+
+    const message = {
+        token: fcm_token,
+        notification: {
+            title: title || "Test Notification",
+            body: body || "Notification content",
+        },
+        data: data || { orderId: "123", orderDate: "2025-05-06" },
+        android: {
+            priority: "high",
+        },
+        apns: {
+            payload: {
+                aps: {
+                    sound: "default",
+                    badge: 1,
+                },
+            },
+        },
+    };
+
+    return await admin.messaging().send(message);
 }
 
   const httpServer = http.createServer((req, res) => {
