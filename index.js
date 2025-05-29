@@ -13,14 +13,21 @@ let latestTemperature = null;
 let latestHumidity = null;
 let initialConnectionReceived = false;
 let messageBuffer = ''; // Buffer to store incoming messages
+let lastHumidityNotificationTime = 0; // Track last humidity notification time
 
-storeCommand('FEED =0');
+let fcm_token = "eUEE7MldRN-mAWcoh8O1jv:APA91bETlXKlNRrteMI0GrtuqyvcEyB7HqJAaYC1_jADpXF5IbR-ygEjhnTVXPach8HryYL0uFe2lyCWXoKIr0llG_ydmqXcjjEv96FfjobTCXC98zkpcSM"; // Make token mutable so it can be updated
+
+// storeCommand('INTERVAL=50,START=10.00,END=19.00,AMOUNT=100');
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 // Initialize Firebase 
 const tcpServer = net.createServer((socket) => {
+    
+    // get time from date time
+    //const currentTime = new Date().toLocaleTimeString();
+    //sendPushNotification(`test title ${currentTime}`, "test body", { message: "test data" });
     console.log('ESP32 connected with socket:', socket.remoteAddress, socket.remotePort);   
 
     connectedClient = socket; 
@@ -30,7 +37,7 @@ const tcpServer = net.createServer((socket) => {
     socket.on('data', (message) => {
         try {
             messageBuffer += message.toString();
-            console.log('Raw data received:', message.toString());
+            // console.log('Raw data received:', message.toString());
             
             if (messageBuffer.includes('\n')) {
                 // Split buffer into lines and process each complete line
@@ -41,12 +48,12 @@ const tcpServer = net.createServer((socket) => {
                 lines.forEach(line => {
                   line = line.trim();
                   if (line) {
-                    console.log('Processing complete line:', line);
+                    // console.log('Processing complete line:', line);
                     
                     // Check for initial connection message
                     if (line === 'ESP32 has connected!' && !initialConnectionReceived) {
                       initialConnectionReceived = true;
-                      console.log('ESP32 initial connection confirmed');
+                      // console.log('ESP32 initial connection confirmed');
                     }
                     
                     // Try to match the full sensor data pattern
@@ -54,8 +61,22 @@ const tcpServer = net.createServer((socket) => {
                     if (fullMatch) {
                       latestTemperature = parseFloat(fullMatch[1]);
                       latestHumidity = parseFloat(fullMatch[2]);
-                      console.log('Parsed values:', { temperature: latestTemperature, humidity: latestHumidity });
+                      // console.log('Parsed values:', { temperature: latestTemperature, humidity: latestHumidity });
                       sendSensorDataToWebSocket(latestTemperature, latestHumidity);
+
+                      // Check humidity level and send push notification if above 70%
+                      const now = Date.now();
+                      const oneMinute = 60 * 1000; // 1 minute in milliseconds
+                      if (latestHumidity > 70 && (now - lastHumidityNotificationTime) >= oneMinute) {
+                        const currentTime = new Date().toLocaleTimeString();
+                        console.log('High humidity detected:', latestHumidity, '% at', currentTime);
+                        sendPushNotification(
+                          `High Humidity Alert ${currentTime}`,
+                          `Current humidity level: ${latestHumidity}%`,
+                          { message: "test data" }
+                        );
+                        lastHumidityNotificationTime = now; // Update last notification time
+                      }
                     }
                   }
                 });
@@ -99,12 +120,12 @@ const tcpServer = net.createServer((socket) => {
         });
         wsClient.send(data);
         storeTemperature(temperature, humidity);
-        console.log('Sent data to WebSocket client:', data);
+        // console.log('Sent data to WebSocket client:', data);
     }
 }
 
   async function sendPushNotification(title, body, data) {
-    const fcm_token= "fXgQ8x3bTQCdkbPUmpQF4r:APA91bERB_QwB1sj8shicr5rJyZAGE4DaF4RT-qE2yV5bq9w58AGZxhbg5nt46S7YQ9OC8HOklGejXkDI4oRLGyV1iIUewS3XrCer_10Ead_RjqAtZ9rQK8";
+    console.log('Sending push notification:', { title, body, data });
 
     const message = {
         token: fcm_token,
@@ -125,8 +146,10 @@ const tcpServer = net.createServer((socket) => {
             },
         },
     };
-
-    return await admin.messaging().send(message);
+    // print if success
+    let result = await admin.messaging().send(message);
+    console.log('Push notification sent successfully:', result);
+    return result;
 }
 
   const httpServer = http.createServer((req, res) => {
@@ -199,6 +222,19 @@ const tcpServer = net.createServer((socket) => {
         temperature: latestTemperature,
         humidity: latestHumidity
       }));
+      return;
+    }
+
+    // Handle FCM token update from mobile app
+    if (parsedUrl.pathname === '/send-token') {
+      let body = '';
+      req.on('data', chunk => body += chunk.toString());
+      req.on('end', () => {
+        //const data = JSON.parse(body);
+        //fcm_token = data.token;
+        console.log('FCM token:', body);
+        res.end('ok');
+      });
       return;
     }
     
@@ -453,7 +489,7 @@ const tcpServer = net.createServer((socket) => {
             feedButton.addEventListener('click', async () => {
               feedButton.disabled = true;
               try {
-                const response = await fetch('/feed');
+                const response = await fetch('/feed?value=1000');
                 const data = await response.json();
                 statusDiv.textContent = data.message;
                 setTimeout(() => feedButton.disabled = false, 2000);
